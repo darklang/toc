@@ -15,8 +15,9 @@ import (
 
 var ignoreMatcher gitignore.Matcher
 
-func check(e error) {
+func check(reason string, e error) {
 	if e != nil {
+		fmt.Printf("An unknown error occurred while %v\n", reason)
 		panic(e)
 	}
 }
@@ -31,19 +32,22 @@ type Records = map[string]Record
 func initializeGitIgnores(dir string) {
 	fs := osfs.New(dir)
 	patterns, err := gitignore.ReadPatterns(fs, []string{"."})
-	check(err)
+	check("reading gitignore files", err)
 	ignoreMatcher = gitignore.NewMatcher(patterns)
-	check(err)
+	check("creating matchers from gitignore files", err)
 }
 
 func printRecords(records Records) {
 	f, err := os.Create("TOC.md")
-	check(err)
+	check("opening TOC.md", err)
 	w := bufio.NewWriter(f)
 
 	for _, r := range records {
+		w.WriteString("- [")
 		w.WriteString(r.path)
-		w.WriteString(": ")
+		w.WriteString("](")
+		w.WriteString(r.path)
+		w.WriteString("): ")
 		w.WriteString(r.description)
 		w.WriteString("\n")
 	}
@@ -60,9 +64,10 @@ func main() {
 	fmt.Printf("reading %q\n", dir)
 
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		check(err)
+		check("Walking into "+path, err)
 		path = strings.TrimPrefix(path, dir)
 		path = strings.TrimPrefix(path, "/")
+
 		// Check if it's ignored
 		if ignoreMatcher.Match([]string{path}, d.IsDir()) || path == ".git" {
 			fmt.Printf("skipping: %q\n", path)
@@ -72,19 +77,18 @@ func main() {
 				return nil
 			}
 		}
+
+		// Save description
 		if d.IsDir() {
-			desc := "a dir named " + path
+			desc := "a dir"
 			records[path] = Record{path: path, description: desc}
 		} else {
-			desc := "a file named " + path
+			desc := "a file"
 			records[path] = Record{path: path, description: desc}
 		}
 		return nil
 	})
-	if err != nil {
-		fmt.Printf("error walking the path %q: %v\n", '.', err)
-		return
-	} else {
-		printRecords(records)
-	}
+	check("Walking the directory tree", err)
+	printRecords(records)
+
 }
