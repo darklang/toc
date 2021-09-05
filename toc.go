@@ -5,22 +5,51 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-billy/osfs"
-	"gopkg.in/src-d/go-git.v4/plumbing/format/gitignore"
+	ignore "github.com/sabhiram/go-gitignore"
+	"gopkg.in/yaml.v3"
 )
-
-var ignoreMatcher gitignore.Matcher
 
 func check(reason string, e error) {
 	if e != nil {
 		fmt.Printf("An unknown error occurred while %v\n", reason)
 		panic(e)
 	}
+}
+
+// We keep a list of matchers and test files in each
+type GitIgnores struct {
+	matchers []*ignore.GitIgnore
+}
+
+func (gi *GitIgnores) addFile(path string) {
+	matchers, err := ignore.CompileIgnoreFile(path)
+	check("adding gitignore file from "+path, err)
+	gi.matchers = append(gi.matchers, matchers)
+}
+
+func (gi *GitIgnores) addList(paths []string) {
+	matchers := ignore.CompileIgnoreLines(paths...)
+	gi.matchers = append(gi.matchers, matchers)
+}
+
+func (gi *GitIgnores) addBuiltin(root string) {
+	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore"})
+	gi.addFile(root + "/.gitignore")
+}
+
+func (gi *GitIgnores) Match(path string) bool {
+	for _, matcher := range gi.matchers {
+		if matcher.MatchesPath(path) {
+			return true
+		}
+	}
+	return false
 }
 
 type Record struct {
@@ -31,6 +60,10 @@ type Record struct {
 
 type Records = map[string]Record
 
+func writeRecords(records Records, path string, description string, isFile bool) {
+	records[path] = Record{path: path, description: description, isFile: isFile}
+}
+
 // Recursive structure with all the results laid out, ready to print
 type Layout struct {
 	completePath string
@@ -39,18 +72,10 @@ type Layout struct {
 	children     map[string]Layout
 }
 
-func initializeGitIgnores(dir string) {
-	fs := osfs.New(dir)
-	patterns, err := gitignore.ReadPatterns(fs, []string{"."})
-	check("reading gitignore files", err)
-	ignoreMatcher = gitignore.NewMatcher(patterns)
-	check("creating matchers from gitignore files", err)
-}
-
 func convertRecordsToLayout(records Records) Layout {
 	paths := make([]string, 0, len(records))
 
-	root := Layout{completePath: "", filename: "", description: "root", children: make(map[string]Layout, 0)}
+	root := Layout{completePath: "", filename: "", description: "root", children: make(map[string]Layout)}
 
 	for path := range records {
 		if path != "" {
@@ -84,22 +109,20 @@ func convertRecordsToLayout(records Records) Layout {
 	return root
 }
 
-func writeRecords(records Records, path string, description string, isFile bool) {
-	records[path] = Record{path: path, description: description, isFile: isFile}
-}
-
 func printLayout(w *bufio.Writer, indent int, layout Layout) {
-	indentStr := strings.Repeat(" ", indent)
-	w.WriteString(indentStr)
-	w.WriteString("- [")
-	w.WriteString(layout.filename)
-	w.WriteString("](")
-	w.WriteString(layout.completePath)
-	w.WriteString("): ")
-	w.WriteString(layout.description)
-	w.WriteString("\n")
-	children := make([]string, 0)
+	if layout.filename != "" {
+		indentStr := strings.Repeat(" ", indent)
+		w.WriteString(indentStr)
+		w.WriteString("- [")
+		w.WriteString(layout.filename)
+		w.WriteString("](")
+		w.WriteString(layout.completePath)
+		w.WriteString("): ")
+		w.WriteString(layout.description)
+		w.WriteString("\n")
+	}
 
+	children := make([]string, 0)
 	for child := range layout.children {
 		children = append(children, child)
 	}
@@ -113,27 +136,67 @@ func printLayouts(layout Layout) {
 	f, err := os.Create("TOC.md")
 	check("opening TOC.md", err)
 	w := bufio.NewWriter(f)
-	printLayout(w, 0, layout)
+	printLayout(w, -2, layout)
 	w.Flush()
 }
 
+type DirectoriesValues = map[string]string
+
+type Directories struct {
+	NoListing []string          `yaml:nolisting`
+	Values    DirectoriesValues `yaml:values`
+}
+
+type Config struct {
+	Directories Directories
+	Ignore      []string
+}
+
+// var defaultDirs = Directories{IgnoreContents: []string{}}
+var defaultDirs = Directories{}
+var defaultConfig = Config{Directories: defaultDirs, Ignore: []string{}}
+
 func main() {
+	// Read command line args
 	flag.Parse()
 	dir := flag.Arg(0)
+
+	// Read config
+	configString, err := ioutil.ReadFile("toc.yaml")
+	cfg := defaultConfig
+	if err == nil {
+		err = yaml.Unmarshal(configString, &cfg)
+		check("Reading config", err)
+		fmt.Printf("config %+v\n", cfg)
+	} else {
+		fmt.Printf("no config file %+v\n", cfg)
+	}
+	cfgNoListing := make(map[string]bool, len(cfg.Ignore))
+	for _, dirName := range cfg.Directories.NoListing {
+		cfgNoListing[dirName] = true
+	}
+
+	// Pass 1: read the gitignores
+	ignores := GitIgnores{}
+	ignores.addBuiltin(dir)
+	ignores.addList(cfg.Ignore)
+	fmt.Printf("ignores: %+v\n", ignores)
+
+	// Pass 2: get the metadata for the directory listing
 	records := make(map[string]Record)
-
-	initializeGitIgnores(dir)
-
-	fmt.Printf("reading %q\n", dir)
-
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		check("Walking into "+path, err)
-		path = strings.TrimPrefix(path, dir)
-		path = strings.TrimPrefix(path, "/")
 
-		// Check if it's ignored
-		if ignoreMatcher.Match([]string{path}, d.IsDir()) || path == ".git" {
-			fmt.Printf("skipping: %q\n", path)
+		// If we find more ignores as we go on, rebuild the matcher
+		if strings.HasSuffix(path, ".gitignore") {
+			ignores.addFile(path)
+		}
+
+		// Check if it's ignored via gitignore
+		pathname := strings.TrimPrefix(path, dir)
+		pathname = strings.TrimPrefix(pathname, "/")
+		if ignores.Match(pathname) {
+			fmt.Printf("skipping: %q\n", pathname)
 			if d.IsDir() {
 				return filepath.SkipDir
 			} else {
@@ -144,15 +207,17 @@ func main() {
 		// Save description
 		if d.IsDir() {
 			desc := "a dir"
-			writeRecords(records, path, desc, d.IsDir())
+			writeRecords(records, pathname, desc, d.IsDir())
 		} else {
 			desc := "a file"
-			writeRecords(records, path, desc, d.IsDir())
+			writeRecords(records, pathname, desc, d.IsDir())
 		}
 		return nil
 	})
 	check("Walking the directory tree", err)
+
+	// Reading the files is finished, so convert and print
 	layout := convertRecordsToLayout(records)
 	printLayouts(layout)
-
+	fmt.Println("\nDone")
 }
