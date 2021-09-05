@@ -39,7 +39,7 @@ func (gi *GitIgnores) addList(paths []string) {
 }
 
 func (gi *GitIgnores) addBuiltin(root string) {
-	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore"})
+	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore", "node_modules"})
 	gi.addFile(root + "/.gitignore")
 }
 
@@ -180,7 +180,6 @@ func main() {
 	ignores := GitIgnores{}
 	ignores.addBuiltin(dir)
 	ignores.addList(cfg.Ignore)
-	fmt.Printf("ignores: %+v\n", ignores)
 
 	// Pass 2: get the metadata for the directory listing
 	records := make(map[string]Record)
@@ -188,15 +187,16 @@ func main() {
 		check("Walking into "+path, err)
 
 		// If we find more ignores as we go on, rebuild the matcher
-		if strings.HasSuffix(path, ".gitignore") {
+		if strings.HasSuffix(path, "/.gitignore") {
 			ignores.addFile(path)
+			return nil
 		}
 
 		// Check if it's ignored via gitignore
 		pathname := strings.TrimPrefix(path, dir)
 		pathname = strings.TrimPrefix(pathname, "/")
 		if ignores.Match(pathname) {
-			fmt.Printf("skipping: %q\n", pathname)
+			fmt.Printf("ignoring: %q\n", pathname)
 			if d.IsDir() {
 				return filepath.SkipDir
 			} else {
@@ -207,7 +207,17 @@ func main() {
 		// Save description
 		if d.IsDir() {
 			desc := "a dir"
+			value, hasCfgValue := cfg.Directories.Values[pathname]
+			if hasCfgValue {
+				fmt.Printf("using value for %q: %q\n", pathname, value)
+				writeRecords(records, pathname, value, d.IsDir())
+				return filepath.SkipDir
+			}
 			writeRecords(records, pathname, desc, d.IsDir())
+			if cfgNoListing[pathname] {
+				fmt.Printf("nolisting: %q\n", pathname)
+				return filepath.SkipDir
+			}
 		} else {
 			desc := "a file"
 			writeRecords(records, pathname, desc, d.IsDir())
