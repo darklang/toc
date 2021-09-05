@@ -62,7 +62,6 @@ func convertRecordsToLayout(records Records) Layout {
 		record := records[path]
 
 		splitPath := strings.Split(path, "/")
-		fmt.Printf("split path: %q\n", splitPath)
 		// Get the end of the path, so we stop early
 		filenameIndex := len(splitPath) - 1
 		filename := splitPath[filenameIndex]
@@ -99,8 +98,14 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 	w.WriteString("): ")
 	w.WriteString(layout.description)
 	w.WriteString("\n")
-	for _, child := range layout.children {
-		printLayout(w, indent+2, child)
+	children := make([]string, 0)
+
+	for child := range layout.children {
+		children = append(children, child)
+	}
+	sort.Strings(children)
+	for _, child := range children {
+		printLayout(w, indent+2, layout.children[child])
 	}
 }
 
