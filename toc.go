@@ -388,7 +388,7 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 		pathname := strings.TrimPrefix(path, dir)
 		pathname = strings.TrimPrefix(pathname, "/")
 		if ignores.Match(pathname) {
-			fmt.Printf("ignoring: %q\n", pathname)
+			// fmt.Printf("ignoring: %q\n", pathname)
 			if d.IsDir() {
 				return filepath.SkipDir
 			} else {
@@ -417,13 +417,13 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 			desc := "a dir"
 			value, hasCfgValue := cfg.Directories.Values[pathname]
 			if hasCfgValue {
-				fmt.Printf("using value for %q: %q\n", pathname, value)
+				// fmt.Printf("using value for %q: %q\n", pathname, value)
 				writeRecords(records, pathname, value, d.IsDir())
 				return filepath.SkipDir
 			} else {
 				writeRecords(records, pathname, desc, d.IsDir())
 				if cfgNoListing[pathname] {
-					fmt.Printf("nolisting: %q\n", pathname)
+					// fmt.Printf("nolisting: %q\n", pathname)
 					return filepath.SkipDir
 				}
 			}
@@ -492,7 +492,7 @@ func convertRecordsToLayout(records Records) Layout {
 	return root
 }
 
-func printLayout(w *bufio.Writer, indent int, layout Layout) {
+func printLayout(w *bufio.Writer, cfg *Config, indent int, layout Layout) {
 	if layout.filename != "" {
 		indentStr := strings.Repeat(" ", indent)
 		w.WriteString(indentStr)
@@ -516,29 +516,51 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 		w.WriteString("\n")
 	}
 
-	// Put dotfiles at the end
+	// Prioritize according to config, and then dotfiles at the end
+	// TODO: the prioritized should be ordered by priority, not alphabetically
+	prioritizedChildren := make([]string, 0)
 	children := make([]string, 0)
 	dotChildren := make([]string, 0)
+	isInPriorityList := func(childFilename string) bool {
+		var path string
+		if layout.completePath == "" {
+			path = childFilename
+		} else {
+			path = layout.completePath + "/" + childFilename
+		}
+		for _, priorityFilename := range cfg.Prioritize {
+			fmt.Printf("Prioritizing %+v against %+v\n", path, priorityFilename)
+			if path == priorityFilename {
+				fmt.Printf("Prioritized %+v\n", path)
+				return true
+			}
+		}
+		// fmt.Printf("Not prioritized %+v\n", childFilename)
+		return false
+	}
 	for child := range layout.children {
 		if strings.HasPrefix(child, ".") {
 			dotChildren = append(dotChildren, child)
+		} else if isInPriorityList(child) {
+			prioritizedChildren = append(prioritizedChildren, child)
 		} else {
 			children = append(children, child)
 		}
 	}
+	sort.Strings(prioritizedChildren)
 	sort.Strings(children)
 	sort.Strings(dotChildren)
-	children = append(children, dotChildren...)
+	children = append(append(prioritizedChildren, children...), dotChildren...)
 	for _, child := range children {
-		printLayout(w, indent+2, layout.children[child])
+		printLayout(w, cfg, indent+2, layout.children[child])
 	}
 }
 
-func printLayouts(layout Layout) {
+func printLayouts(layout Layout, cfg *Config) {
 	f, err := os.Create("TOC.md")
 	check("opening TOC.md", err)
 	w := bufio.NewWriter(f)
-	printLayout(w, -2, layout)
+	printLayout(w, cfg, -2, layout)
 	w.Flush()
 }
 
@@ -557,6 +579,7 @@ type Config struct {
 	Directories     Directories
 	Ignore          []string
 	DefaultComments map[string]string
+	Prioritize      []string
 }
 
 func readConfig() Config {
@@ -597,7 +620,7 @@ func main() {
 
 	// Reading the files is finished, so convert and print
 	layout := convertRecordsToLayout(records)
-	printLayouts(layout)
+	printLayouts(layout, &cfg)
 
 	fmt.Println("\nDone")
 }
