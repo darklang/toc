@@ -39,7 +39,7 @@ func (gi *GitIgnores) addList(paths []string) {
 }
 
 func (gi *GitIgnores) addBuiltin(root string) {
-	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore", "node_modules"})
+	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore", "node_modules", "README.md"})
 	gi.addFile(root + "/.gitignore")
 }
 
