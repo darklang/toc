@@ -315,7 +315,7 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		check("Walking into "+path, err)
 
-		// If we find more ignores as we go on, rebuild the matcher
+		// If we find more ignores as we go on, add them to the matcher
 		if strings.HasSuffix(path, "/.gitignore") {
 			ignores.addFile(path)
 			return nil
