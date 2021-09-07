@@ -280,6 +280,7 @@ var commentTable = map[string]([]Syntax){
 	"lua":    []Syntax{s("--"), m("--[[", "]]")},
 	"m":      cStyle, // objective-c
 	"matlab": []Syntax{s("%")},
+	"md":     perlStyle,
 	"ml":     []Syntax{ocamlMulti1, ocamlMulti2},
 	"nim":    []Syntax{hash, m("#[", "]#")},
 	"php":    append(cStyle, hash),
@@ -304,17 +305,21 @@ var commentTable = map[string]([]Syntax){
 	"vb":     []Syntax{s("'"), s("REM")},
 	"vim":    []Syntax{s("\"")},
 	"xml":    xmlStyle,
+	"yaml":   perlStyle,
+	"yml":    perlStyle,
 	"zig":    []Syntax{s("///"), slashes},
 	"zsh":    perlStyle,
 }
 
 // Look in the file and get the description from the first top-level comment
-func getFileDescription(path string) string {
+func getFileDescription(path string) (string, error) {
 	firstFewLines := make([]string, 0)
 
 	// Open the file for scanning
 	reader, err := os.Open(path)
-	check("opening "+path, err)
+	if err != nil {
+		return "", err
+	}
 	scanner := bufio.NewScanner(reader)
 
 	// First line
@@ -349,7 +354,7 @@ func getFileDescription(path string) string {
 			break
 		}
 	}
-	return MarkdownCharacters(description)
+	return MarkdownCharacters(description), nil
 }
 
 // -----------------------------
@@ -414,7 +419,8 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 
 		// Save description
 		if d.IsDir() {
-			desc := "a dir"
+			// If we can't find a README, ignore
+			desc, _ := getFileDescription(path + "/" + "README.md")
 			value, hasCfgValue := cfg.Directories.Values[pathname]
 			if hasCfgValue {
 				// fmt.Printf("using value for %q: %q\n", pathname, value)
@@ -433,7 +439,8 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 				// Use the default comment for this file type, if present
 				desc = *defaultDesc
 			} else {
-				desc = getFileDescription(path)
+				desc, err = getFileDescription(path)
+				check("Opening file", err)
 			}
 			writeRecords(records, pathname, desc, d.IsDir())
 		}
@@ -529,9 +536,7 @@ func printLayout(w *bufio.Writer, cfg *Config, indent int, layout Layout) {
 			path = layout.completePath + "/" + childFilename
 		}
 		for _, priorityFilename := range cfg.Prioritize {
-			fmt.Printf("Prioritizing %+v against %+v\n", path, priorityFilename)
 			if path == priorityFilename {
-				fmt.Printf("Prioritized %+v\n", path)
 				return true
 			}
 		}
@@ -588,7 +593,7 @@ func readConfig(dir string) Config {
 		var cfg Config
 		err = yaml.Unmarshal(configString, &cfg)
 		check("Reading config", err)
-		fmt.Printf("config %+v\n", cfg)
+		// fmt.Printf("config %+v\n", cfg)
 		return cfg
 	} else {
 		var defaultDirs = Directories{NoListing: []string{}, Values: map[string]string{}}
@@ -621,6 +626,4 @@ func main() {
 	// Reading the files is finished, so convert and print
 	layout := convertRecordsToLayout(records)
 	printLayouts(layout, &cfg)
-
-	fmt.Println("\nDone")
 }
