@@ -213,39 +213,102 @@ func (c MultiLineComment) read(lines []string) string {
 // Language definitions
 // -----------------------------
 
+var uncommentedLanguages = []string{"eot", "woff", "ttf"}
+
 type LanguageComment struct {
 	language string
 	syntaxes []Syntax
 }
 
-var defaultLanguageComment = LanguageComment{
-	language: "Unknown",
-	syntaxes: []Syntax{SingleLineComment{prefix: "//"}, SingleLineComment{prefix: "#"}},
+func s(prefix string) Syntax {
+	return SingleLineComment{prefix: prefix}
 }
 
-var commentTable = map[string]LanguageComment{
-	"go": {
-		language: "Go",
-		syntaxes: []Syntax{SingleLineComment{prefix: "//"}},
-	},
-	"md": {
-		language: "Markdown",
-		syntaxes: []Syntax{SingleLineComment{prefix: "#"}},
-	},
-	"fs": {
-		language: "F#",
-		syntaxes: []Syntax{SingleLineComment{prefix: "//"}},
-	},
-	"ml": {
-		language: "OCaml",
-		syntaxes: []Syntax{MultiLineComment{start: "(**", end: "*)"}, MultiLineComment{start: "(*", end: "*)"}},
-	},
-	"eot": {
-		language: "Embedded OpenType",
-		syntaxes: []Syntax{},
-	},
+func m(start string, end string) Syntax {
+	return MultiLineComment{start: start, end: end}
 }
 
+var slashes = s("//")
+var hash = s("#")
+var cMulti = m("/*", "*/")
+var javaMulti = m("/**", "*/")
+var ocamlMulti1 = m("(*", "*)")
+var ocamlMulti2 = m("(**", "*)")
+var htmlMulti = m("<!--", "-->")
+
+// Collections
+var cStyle = []Syntax{slashes, cMulti}
+var xmlStyle = []Syntax{htmlMulti}
+var perlStyle = []Syntax{hash}
+var defaultStyle = []Syntax{slashes, hash}
+var javaStyle = append(cStyle, javaMulti)
+var haskellStyle = []Syntax{s("--"), m("{-", "-}")}
+
+var commentTable = map[string]([]Syntax){
+	"bash":   perlStyle,
+	"c":      cStyle,
+	"cl":     []Syntax{s(";"), m("#|", "|#")}, // common lisp
+	"clj":    []Syntax{s(";")},
+	"coffee": perlStyle, // coffeescript
+	"cpp":    cStyle,
+	"cr":     perlStyle, // crystal
+	"cs":     cStyle,    // C#
+	"css":    []Syntax{cMulti},
+	"cxx":    cStyle, // c++
+	"d":      append(cStyle, m("/+", "+/")),
+	"dart":   cStyle,
+	"edn":    []Syntax{s(";")}, // clojure's edn data format
+	"el":     []Syntax{s(";")}, // emacslisp
+	"elm":    haskellStyle,
+	"erl":    []Syntax{s("%")},
+	"ex":     perlStyle, // elixir
+	"exs":    perlStyle, // elixir
+	"fish":   perlStyle,
+	"fs":     []Syntax{slashes, ocamlMulti1, ocamlMulti2}, // F#
+	"fsi":    []Syntax{slashes, ocamlMulti1, ocamlMulti2}, // F#
+	"fsx":    []Syntax{slashes, ocamlMulti1, ocamlMulti2}, // F#
+	"groovy": cStyle,
+	"hs":     haskellStyle,
+	"html":   xmlStyle,
+	"hx":     cStyle, // haxe
+	"java":   javaStyle,
+	"jl":     append(perlStyle, m("#=", "=#")), // julia
+	"js":     cStyle,
+	"jsp":    javaStyle,
+	"kt":     javaStyle, // kotlin
+	"lisp":   []Syntax{s(";"), m("#|", "|#")},
+	"lua":    []Syntax{s("--"), m("--[[", "]]")},
+	"m":      cStyle, // objective-c
+	"matlab": []Syntax{s("%")},
+	"ml":     []Syntax{ocamlMulti1, ocamlMulti2},
+	"nim":    []Syntax{hash, m("#[", "]#")},
+	"php":    append(cStyle, hash),
+	"pl":     perlStyle,
+	"ps1":    []Syntax{hash, m("<#", "#>")}, // powershell
+	"py":     []Syntax{hash, m("\"\"\"", "\"\"\"")},
+	"r":      perlStyle,
+	"rb":     []Syntax{hash, m("=begin", "=end")},
+	"rkt":    []Syntax{s(";"), m("#|", "|#"), s("#;")}, // racket
+	"rss":    xmlStyle,
+	"rs":     append(cStyle, m("/*!", "*/"), s(`//!`)),
+	"sass":   cStyle,
+	"scala":  cStyle,
+	"scm":    []Syntax{s(";"), m("#|", "|#")}, // scheme
+	"scss":   cStyle,
+	"sh":     perlStyle,
+	"sql":    []Syntax{s("--")},
+	"st":     []Syntax{s("\"")}, // smalltalk
+	"swift":  cStyle,
+	"tex":    []Syntax{s("%")}, // tex/latex
+	"ts":     []Syntax{slashes, cMulti},
+	"vb":     []Syntax{s("'"), s("REM")},
+	"vim":    []Syntax{s("\"")},
+	"xml":    xmlStyle,
+	"zig":    []Syntax{s("///"), slashes},
+	"zsh":    perlStyle,
+}
+
+// Look in the file and get the description from the first top-level comment
 func getFileDescription(path string) string {
 	firstFewLines := make([]string, 0)
 
@@ -273,14 +336,14 @@ func getFileDescription(path string) string {
 
 	// Find the language
 	extension := filepath.Ext(path)
-	language, hasLanguage := commentTable[extension]
+	syntaxes, hasLanguage := commentTable[extension]
 	if !hasLanguage {
-		language = defaultLanguageComment
+		syntaxes = defaultStyle
 	}
 
 	// Get the description from the syntax definitions
 	description := ""
-	for _, syntax := range language.syntaxes {
+	for _, syntax := range syntaxes {
 		description = syntax.read(firstFewLines)
 		if description != "" {
 			break
@@ -334,11 +397,18 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 		}
 
 		// Check if there's a default comment for it
-		// find in list if it has the same suffix
 		defaultDesc := (*string)(nil)
 		for defaultSuffix, defaultValue := range cfg.DefaultComments {
 			if strings.HasSuffix(path, defaultSuffix) {
 				defaultDesc = &defaultValue
+			}
+		}
+
+		// Check if it should have no comment
+		for _, extension := range uncommentedLanguages {
+			if strings.HasSuffix(path, "."+extension) {
+				writeRecords(records, pathname, "", d.IsDir())
+				return nil
 			}
 		}
 
@@ -360,6 +430,7 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 		} else {
 			var desc string
 			if defaultDesc != nil {
+				// Use the default comment for this file type, if present
 				desc = *defaultDesc
 			} else {
 				desc = getFileDescription(path)
@@ -445,6 +516,7 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 		w.WriteString("\n")
 	}
 
+	// Put dotfiles at the end
 	children := make([]string, 0)
 	dotChildren := make([]string, 0)
 	for child := range layout.children {
