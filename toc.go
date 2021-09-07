@@ -372,7 +372,7 @@ func writeRecords(records Records, path string, description string, isFile bool)
 
 func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 	cfgNoListing := make(map[string]bool, len(cfg.Ignore))
-	for _, dirName := range cfg.Directories.NoListing {
+	for _, dirName := range cfg.NoDirectoryContents {
 		cfgNoListing[dirName] = true
 	}
 
@@ -399,10 +399,12 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 		}
 
 		// Check if there's a default comment for it
-		defaultDesc := (*string)(nil)
-		for defaultSuffix, defaultValue := range cfg.DefaultComments {
+		defaultDesc := ""
+		hasDefaultDesc := false
+		for defaultSuffix, defaultValue := range cfg.DefaultDescriptions {
 			if strings.HasSuffix(path, defaultSuffix) {
-				defaultDesc = &defaultValue
+				defaultDesc = defaultValue
+				hasDefaultDesc = true
 			}
 		}
 
@@ -414,34 +416,35 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 			}
 		}
 
+		cfgDesc, hasCfgDescription := cfg.Descriptions[pathname]
 		// Save description
+		desc := ""
 		if d.IsDir() {
-			// If we can't find a README, ignore
-			desc, _ := getFileDescription(path + "/" + "README.md")
-			value, hasCfgValue := cfg.Directories.Values[pathname]
-			if hasCfgValue {
-				// fmt.Printf("using value for %q: %q\n", pathname, value)
-				writeRecords(records, pathname, value, d.IsDir())
+			if hasCfgDescription {
+				desc = cfgDesc
+			} else {
+				// If we can't find a README, ignore
+				desc, _ = getFileDescription(path + "/" + "README.md")
+			}
+			writeRecords(records, pathname, desc, d.IsDir())
+			if cfgNoListing[pathname] {
 				return filepath.SkipDir
 			} else {
-				writeRecords(records, pathname, desc, d.IsDir())
-				if cfgNoListing[pathname] {
-					// fmt.Printf("nolisting: %q\n", pathname)
-					return filepath.SkipDir
-				}
+				return nil
 			}
 		} else {
-			var desc string
-			if defaultDesc != nil {
+			if hasCfgDescription {
+				desc = cfgDesc
+			} else if hasDefaultDesc {
 				// Use the default comment for this file type, if present
-				desc = *defaultDesc
+				desc = defaultDesc
 			} else {
 				desc, err = getFileDescription(path)
 				check("Opening file", err)
 			}
 			writeRecords(records, pathname, desc, d.IsDir())
+			return nil
 		}
-		return nil
 	})
 	check("Walking the directory tree", err)
 	return records
@@ -532,7 +535,7 @@ func printLayout(w *bufio.Writer, cfg *Config, indent int, layout Layout) {
 		} else {
 			path = layout.completePath + "/" + childFilename
 		}
-		for _, priorityFilename := range cfg.Prioritize {
+		for _, priorityFilename := range cfg.ShowFirst {
 			if path == priorityFilename {
 				return true
 			}
@@ -570,18 +573,12 @@ func printLayouts(layout Layout, cfg *Config) {
 // Config
 // -----------------------------
 
-type DirectoriesValues = map[string]string
-
-type Directories struct {
-	NoListing []string          `yaml:nolisting`
-	Values    DirectoriesValues `yaml:values`
-}
-
 type Config struct {
-	Directories     Directories
-	Ignore          []string
-	DefaultComments map[string]string
-	Prioritize      []string
+	NoDirectoryContents []string          `yaml:"noDirectoryContents"`
+	Ignore              []string          `yaml:"ignore"`
+	Descriptions        map[string]string `yaml:"descriptions"`
+	DefaultDescriptions map[string]string `yaml:"defaultDescriptions"`
+	ShowFirst           []string          `yaml:"showFirst"`
 }
 
 func readConfig(dir string) Config {
@@ -593,8 +590,13 @@ func readConfig(dir string) Config {
 		// fmt.Printf("config %+v\n", cfg)
 		return cfg
 	} else {
-		var defaultDirs = Directories{NoListing: []string{}, Values: map[string]string{}}
-		cfg := Config{Directories: defaultDirs, Ignore: []string{}}
+		cfg := Config{
+			Ignore:              []string{},
+			NoDirectoryContents: []string{},
+			Descriptions:        make(map[string]string),
+			DefaultDescriptions: make(map[string]string),
+			ShowFirst:           []string{}}
+
 		fmt.Printf("no config file %+v\n", cfg)
 		return cfg
 	}
