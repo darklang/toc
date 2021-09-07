@@ -137,29 +137,25 @@ type Syntax interface {
 // Single line comments
 // -----------------------------
 
-type SingleLineCommentState struct {
-	contents string
-}
-
 type SingleLineComment struct {
 	prefix string
 }
 
-func (nc SingleLineComment) read(lines []string) string {
+func (c SingleLineComment) read(lines []string) string {
 	started := false
 	result := []string{}
 	for _, line := range lines {
 		if started {
-			if strings.HasPrefix(line, nc.prefix) {
-				line = strings.TrimPrefix(line, nc.prefix)
+			if strings.HasPrefix(line, c.prefix) {
+				line = strings.TrimPrefix(line, c.prefix)
 				result = append(result, line)
 			} else {
 				break
 			}
 		} else {
-			if strings.HasPrefix(line, nc.prefix) {
+			if strings.HasPrefix(line, c.prefix) {
 				started = true
-				line = strings.TrimPrefix(line, nc.prefix)
+				line = strings.TrimPrefix(line, c.prefix)
 				result = append(result, strings.TrimSpace(line))
 			}
 		}
@@ -174,6 +170,38 @@ func (nc SingleLineComment) read(lines []string) string {
 // -----------------------------
 // Multiline comments
 // -----------------------------
+
+type MultiLineComment struct {
+	start string
+	end   string
+}
+
+func (c MultiLineComment) read(lines []string) string {
+	started := false
+	result := []string{}
+	for _, line := range lines {
+		if started {
+			if strings.HasSuffix(line, c.end) {
+				line = strings.TrimSuffix(line, c.end)
+				result = append(result, line)
+				break
+			} else {
+				result = append(result, line)
+			}
+		} else {
+			if strings.HasPrefix(line, c.start) {
+				started = true
+				line = strings.TrimPrefix(line, c.start)
+				result = append(result, strings.TrimSpace(line))
+			}
+		}
+	}
+	if len(result) == 0 {
+		return ""
+	} else {
+		return strings.Join(result, "")
+	}
+}
 
 // -----------------------------
 // Language definitions
@@ -201,6 +229,10 @@ var commentTable = map[string]LanguageComment{
 	"fs": {
 		language: "F#",
 		syntaxes: []Syntax{SingleLineComment{prefix: "//"}},
+	},
+	"ml": {
+		language: "OCaml",
+		syntaxes: []Syntax{MultiLineComment{start: "(**", end: "*)"}, MultiLineComment{start: "(*", end: "*)"}},
 	},
 	"eot": {
 		language: "Embedded OpenType",
