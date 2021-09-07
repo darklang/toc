@@ -582,8 +582,8 @@ type Config struct {
 	Prioritize      []string
 }
 
-func readConfig() Config {
-	configString, err := ioutil.ReadFile("toc.yaml")
+func readConfig(dir string) Config {
+	configString, err := ioutil.ReadFile(dir + "/" + ".toc.yaml")
 	if err == nil {
 		var cfg Config
 		err = yaml.Unmarshal(configString, &cfg)
@@ -608,7 +608,7 @@ func main() {
 	dir := flag.Arg(0)
 
 	// Read config
-	cfg := readConfig()
+	cfg := readConfig(dir)
 
 	// Pass 1: read the gitignores
 	ignores := GitIgnores{}
