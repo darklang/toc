@@ -147,7 +147,10 @@ func (c SingleLineComment) read(lines []string) string {
 	for _, line := range lines {
 		if started {
 			if strings.HasPrefix(line, c.prefix) {
-				line = strings.TrimPrefix(line, c.prefix)
+				// If the prefix is repeated, keep removing it
+				for strings.HasPrefix(line, c.prefix) {
+					line = strings.TrimPrefix(line, c.prefix)
+				}
 				result = append(result, line)
 			} else {
 				break
@@ -155,7 +158,10 @@ func (c SingleLineComment) read(lines []string) string {
 		} else {
 			if strings.HasPrefix(line, c.prefix) {
 				started = true
-				line = strings.TrimPrefix(line, c.prefix)
+				// If the prefix is repeated, keep removing it
+				for strings.HasPrefix(line, c.prefix) {
+					line = strings.TrimPrefix(line, c.prefix)
+				}
 				result = append(result, strings.TrimSpace(line))
 			}
 		}
