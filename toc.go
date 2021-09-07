@@ -652,14 +652,14 @@ func main() {
 
 	// Print it out
 	if checkCommand.Used {
-		current, err := ioutil.ReadFile("TOC.md")
+		current, err := ioutil.ReadFile(dir + "/TOC.md")
 		if err != nil || string(current) != layoutString {
 			fmt.Print("TOC.md is out of date")
 			os.Exit(-1)
 		}
 	} else {
 		// By default do a build
-		f, err := os.Create("TOC.md")
+		f, err := os.Create(dir + "/TOC.md")
 		check("opening TOC.md", err)
 		w := bufio.NewWriter(f)
 		w.WriteString(layoutString)
