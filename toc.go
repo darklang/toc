@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io/fs"
 	"io/ioutil"
@@ -13,6 +12,7 @@ import (
 	"strings"
 
 	escape "github.com/JohannesKaufmann/html-to-markdown/escape"
+	"github.com/integrii/flaggy"
 
 	ignore "github.com/sabhiram/go-gitignore"
 	"gopkg.in/yaml.v3"
@@ -27,6 +27,11 @@ func check(reason string, e error) {
 		fmt.Printf("An unknown error occurred while %v\n", reason)
 		panic(e)
 	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // -----------------------------
@@ -51,7 +56,10 @@ func (gi *GitIgnores) addList(paths []string) {
 
 func (gi *GitIgnores) addBuiltin(root string) {
 	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore", "node_modules", "README.md"})
-	gi.addFile(root + "/.gitignore")
+	rootIgnoreFile := root + "/.gitignore"
+	if fileExists(rootIgnoreFile) {
+		gi.addFile(rootIgnoreFile)
+	}
 }
 
 func (gi *GitIgnores) Match(path string) bool {
@@ -581,7 +589,7 @@ func readConfig(dir string) Config {
 			DefaultDescriptions: make(map[string]string),
 			ShowFirst:           []string{}}
 
-		fmt.Printf("no config file %+v\n", cfg)
+		// fmt.Printf("No config file %+v\n")
 		return cfg
 	}
 }
@@ -591,28 +599,21 @@ func readConfig(dir string) Config {
 // -----------------------------
 
 func main() {
-	// Read command line args
-	// toc build
-	// toc check
-	// toc printMissingDescriptions
 
-	showMissing := flag.Bool("showMissing", false, "Show missing descriptions in files and directories")
-	flag.Parse()
-	var mode string
-	var dir string
-	if len(flag.Args()) == 0 {
-		mode = "build"
-		dir = "."
-	} else if flag.Arg(0) == "check" {
-		mode = "check"
-		dir = flag.Arg(1)
-	} else if flag.Arg(0) == "build" {
-		mode = "build"
-		dir = flag.Arg(1)
-	} else {
-		mode = "build"
-		dir = flag.Arg(0)
-	}
+	showMissing := false
+	dir := "."
+	buildCommand := flaggy.NewSubcommand("build")
+	buildCommand.Description = "Build the table of contents"
+	checkCommand := flaggy.NewSubcommand("check")
+	checkCommand.Description = "Check the table of contents is up to date"
+	flaggy.AttachSubcommand(checkCommand, 1)
+	flaggy.AttachSubcommand(buildCommand, 1)
+	buildCommand.AddPositionalValue(&dir, "dir", 1, false, "directory to create TOC.md from")
+	checkCommand.AddPositionalValue(&dir, "dir", 1, false, "directory to create TOC.md from")
+	buildCommand.Bool(&showMissing, "", "showMissing", "Show missing descriptions in files and directories")
+	checkCommand.Bool(&showMissing, "", "showMissing", "Show missing descriptions in files and directories")
+	flaggy.DefaultParser.AdditionalHelpPrepend = "Generate a table of contents for your repo"
+	flaggy.Parse()
 
 	// Read config
 	cfg := readConfig(dir)
@@ -630,21 +631,22 @@ func main() {
 	stats, layoutString := processLayouts(layout, &cfg)
 
 	// Print it out
-	if mode == "build" {
-		f, err := os.Create("TOC.md")
-		check("opening TOC.md", err)
-		w := bufio.NewWriter(f)
-		w.WriteString(layoutString)
-		w.Flush()
-	} else if mode == "check" {
+	if checkCommand.Used {
 		current, err := ioutil.ReadFile("TOC.md")
 		if err != nil || string(current) != layoutString {
 			fmt.Print("TOC.md is out of date")
 			os.Exit(-1)
 		}
+	} else {
+		// By default do a build
+		f, err := os.Create("TOC.md")
+		check("opening TOC.md", err)
+		w := bufio.NewWriter(f)
+		w.WriteString(layoutString)
+		w.Flush()
 	}
 
-	if *showMissing {
+	if showMissing {
 		sort.Strings(stats.missing)
 		for _, missing := range stats.missing {
 			fmt.Printf("  %s\n", missing)
