@@ -2,7 +2,7 @@ root = "."
 
 [build]
   cmd = "go build ."
-  bin = "./toc ../dark"
+  bin = "./toc -showMissing build ../dark"
   exclude_dir = ["assets", "tmp", "vendor"]
   exclude_file = []
   exclude_regex = []

@@ -5,7 +5,7 @@ Briefly, `toc`:
 - creates a table of contents for your repo in `TOC.md`
 - new contributors can read this to get a sense of what's going on
 - descriptions are created using the first comment in each file (or `README.md` for directories)
-- TOC tells you when files are missing description
+- `toc` tells you when files are missing description
 
 # Installation
 
@@ -81,7 +81,7 @@ noDirectoryContents:
 
 ```
 
-## Validate your TOC file is up-to-date
+## Validate your `TOC.md` is up-to-date
 
 ```
 toc check
