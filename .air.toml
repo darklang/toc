@@ -1,8 +1,10 @@
+# Config for automatic file watcher
+
 root = "."
 
 [build]
   cmd = "go build ."
-  bin = "./toc -showMissing build ../dark"
+  bin = "./toc"
   exclude_dir = ["assets", "tmp", "vendor"]
   exclude_file = []
   exclude_regex = []
