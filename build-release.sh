@@ -9,11 +9,9 @@ oses=(linux darwin windows)
 
 for arch in ${archs[@]}; do
   for os in ${oses[@]}; do
-    dir="releases/${arch}/${os}"
-    mkdir -p "${dir}"
-    env GOOS="${os}" GOARCH="${arch}" go build -o "${dir}/toc"
+    env GOOS="${os}" GOARCH="${arch}" go build -o "binaries/toc-${os}-${arch}"
   done
 done
 
 echo -e "Built binaries:\n"
-file releases/**/**/toc
+file binaries/*
