@@ -15,12 +15,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// -----------------------------
+// Misc
+// -----------------------------
+
 func check(reason string, e error) {
 	if e != nil {
 		fmt.Printf("An unknown error occurred while %v\n", reason)
 		panic(e)
 	}
 }
+
+// -----------------------------
+// Ignores - appropriately ignore files
+// -----------------------------
 
 // We keep a list of matchers and test files in each
 type GitIgnores struct {
@@ -52,6 +60,10 @@ func (gi *GitIgnores) Match(path string) bool {
 	return false
 }
 
+// -----------------------------
+// Records - store the data about each file
+// -----------------------------
+
 type Record struct {
 	path        string
 	description string
@@ -63,6 +75,62 @@ type Records = map[string]Record
 func writeRecords(records Records, path string, description string, isFile bool) {
 	records[path] = Record{path: path, description: description, isFile: isFile}
 }
+
+func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
+	cfgNoListing := make(map[string]bool, len(cfg.Ignore))
+	for _, dirName := range cfg.Directories.NoListing {
+		cfgNoListing[dirName] = true
+	}
+
+	records := make(map[string]Record)
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		check("Walking into "+path, err)
+
+		// If we find more ignores as we go on, rebuild the matcher
+		if strings.HasSuffix(path, "/.gitignore") {
+			ignores.addFile(path)
+			return nil
+		}
+
+		// Check if it's ignored via gitignore
+		pathname := strings.TrimPrefix(path, dir)
+		pathname = strings.TrimPrefix(pathname, "/")
+		if ignores.Match(pathname) {
+			fmt.Printf("ignoring: %q\n", pathname)
+			if d.IsDir() {
+				return filepath.SkipDir
+			} else {
+				return nil
+			}
+		}
+
+		// Save description
+		if d.IsDir() {
+			desc := "a dir"
+			value, hasCfgValue := cfg.Directories.Values[pathname]
+			if hasCfgValue {
+				fmt.Printf("using value for %q: %q\n", pathname, value)
+				writeRecords(records, pathname, value, d.IsDir())
+				return filepath.SkipDir
+			}
+			writeRecords(records, pathname, desc, d.IsDir())
+			if cfgNoListing[pathname] {
+				fmt.Printf("nolisting: %q\n", pathname)
+				return filepath.SkipDir
+			}
+		} else {
+			desc := "a file"
+			writeRecords(records, pathname, desc, d.IsDir())
+		}
+		return nil
+	})
+	check("Walking the directory tree", err)
+	return records
+}
+
+// -----------------------------
+// Layout - convert file records a markdown string
+// -----------------------------
 
 // Recursive structure with all the results laid out, ready to print
 type Layout struct {
@@ -140,6 +208,10 @@ func printLayouts(layout Layout) {
 	w.Flush()
 }
 
+// -----------------------------
+// Config
+// -----------------------------
+
 type DirectoriesValues = map[string]string
 
 type Directories struct {
@@ -152,9 +224,25 @@ type Config struct {
 	Ignore      []string
 }
 
-// var defaultDirs = Directories{IgnoreContents: []string{}}
-var defaultDirs = Directories{}
-var defaultConfig = Config{Directories: defaultDirs, Ignore: []string{}}
+func readConfig() Config {
+	configString, err := ioutil.ReadFile("toc.yaml")
+	if err == nil {
+		var cfg Config
+		err = yaml.Unmarshal(configString, &cfg)
+		check("Reading config", err)
+		fmt.Printf("config %+v\n", cfg)
+		return cfg
+	} else {
+		var defaultDirs = Directories{NoListing: []string{}, Values: map[string]string{}}
+		cfg := Config{Directories: defaultDirs, Ignore: []string{}}
+		fmt.Printf("no config file %+v\n", cfg)
+		return cfg
+	}
+}
+
+// -----------------------------
+// Main
+// -----------------------------
 
 func main() {
 	// Read command line args
@@ -162,19 +250,7 @@ func main() {
 	dir := flag.Arg(0)
 
 	// Read config
-	configString, err := ioutil.ReadFile("toc.yaml")
-	cfg := defaultConfig
-	if err == nil {
-		err = yaml.Unmarshal(configString, &cfg)
-		check("Reading config", err)
-		fmt.Printf("config %+v\n", cfg)
-	} else {
-		fmt.Printf("no config file %+v\n", cfg)
-	}
-	cfgNoListing := make(map[string]bool, len(cfg.Ignore))
-	for _, dirName := range cfg.Directories.NoListing {
-		cfgNoListing[dirName] = true
-	}
+	cfg := readConfig()
 
 	// Pass 1: read the gitignores
 	ignores := GitIgnores{}
@@ -182,52 +258,11 @@ func main() {
 	ignores.addList(cfg.Ignore)
 
 	// Pass 2: get the metadata for the directory listing
-	records := make(map[string]Record)
-	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		check("Walking into "+path, err)
-
-		// If we find more ignores as we go on, rebuild the matcher
-		if strings.HasSuffix(path, "/.gitignore") {
-			ignores.addFile(path)
-			return nil
-		}
-
-		// Check if it's ignored via gitignore
-		pathname := strings.TrimPrefix(path, dir)
-		pathname = strings.TrimPrefix(pathname, "/")
-		if ignores.Match(pathname) {
-			fmt.Printf("ignoring: %q\n", pathname)
-			if d.IsDir() {
-				return filepath.SkipDir
-			} else {
-				return nil
-			}
-		}
-
-		// Save description
-		if d.IsDir() {
-			desc := "a dir"
-			value, hasCfgValue := cfg.Directories.Values[pathname]
-			if hasCfgValue {
-				fmt.Printf("using value for %q: %q\n", pathname, value)
-				writeRecords(records, pathname, value, d.IsDir())
-				return filepath.SkipDir
-			}
-			writeRecords(records, pathname, desc, d.IsDir())
-			if cfgNoListing[pathname] {
-				fmt.Printf("nolisting: %q\n", pathname)
-				return filepath.SkipDir
-			}
-		} else {
-			desc := "a file"
-			writeRecords(records, pathname, desc, d.IsDir())
-		}
-		return nil
-	})
-	check("Walking the directory tree", err)
+	records := collectRecords(dir, &cfg, &ignores)
 
 	// Reading the files is finished, so convert and print
 	layout := convertRecordsToLayout(records)
 	printLayouts(layout)
+
 	fmt.Println("\nDone")
 }
