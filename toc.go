@@ -61,6 +61,133 @@ func (gi *GitIgnores) Match(path string) bool {
 }
 
 // -----------------------------
+// Comment types
+// -----------------------------
+
+type Syntax interface {
+	read(firstFiveLines []string) string
+}
+
+// -----------------------------
+// Single line comments
+// -----------------------------
+
+type SingleLineCommentState struct {
+	contents string
+}
+
+type SingleLineComment struct {
+	prefix string
+}
+
+func (nc SingleLineComment) read(lines []string) string {
+	started := false
+	result := []string{}
+	for _, line := range lines {
+		if started {
+			if strings.HasPrefix(line, nc.prefix) {
+				line = strings.TrimPrefix(line, nc.prefix)
+				result = append(result, line)
+			} else {
+				break
+			}
+		} else {
+			if strings.HasPrefix(line, nc.prefix) {
+				started = true
+				line = strings.TrimPrefix(line, nc.prefix)
+				result = append(result, strings.TrimSpace(line))
+			}
+		}
+	}
+	if len(result) == 0 {
+		return ""
+	} else {
+		return strings.Join(result, "")
+	}
+}
+
+// -----------------------------
+// Multiline comments
+// -----------------------------
+
+// -----------------------------
+// Language definitions
+// -----------------------------
+
+type LanguageComment struct {
+	language string
+	syntaxes []Syntax
+}
+
+var defaultLanguageComment = LanguageComment{
+	language: "Unknown",
+	syntaxes: []Syntax{SingleLineComment{prefix: "//"}, SingleLineComment{prefix: "#"}},
+}
+
+var commentTable = map[string]LanguageComment{
+	"go": {
+		language: "Go",
+		syntaxes: []Syntax{SingleLineComment{prefix: "//"}},
+	},
+	"md": {
+		language: "Markdown",
+		syntaxes: []Syntax{SingleLineComment{prefix: "#"}},
+	},
+	"fs": {
+		language: "F#",
+		syntaxes: []Syntax{SingleLineComment{prefix: "//"}},
+	},
+	"eot": {
+		language: "Embedded OpenType",
+		syntaxes: []Syntax{},
+	},
+}
+
+func getFileDescription(path string) string {
+	firstFewLines := make([]string, 0)
+
+	// Open the file for scanning
+	reader, err := os.Open(path)
+	check("opening "+path, err)
+	scanner := bufio.NewScanner(reader)
+
+	// First line
+	// hashBangLine := ""
+	scanner.Scan()
+	firstLine := scanner.Text()
+	if strings.HasPrefix(firstLine, "#!") {
+		// hashBangLine = firstLine
+	} else {
+		firstFewLines = append(firstFewLines, firstLine)
+	}
+
+	// Read another few lines
+	for i := 0; i < 5; i++ {
+		scanner.Scan()
+		line := scanner.Text()
+		firstFewLines = append(firstFewLines, line)
+	}
+
+	// Find the language
+	extension := filepath.Ext(path)
+	language, hasLanguage := commentTable[extension]
+	if !hasLanguage {
+		language = defaultLanguageComment
+	}
+
+	// Get the description from the syntax definitions
+	description := ""
+	for _, syntax := range language.syntaxes {
+		description = syntax.read(firstFewLines)
+		if description != "" {
+			break
+		}
+	}
+	// return md.escape.MarkdownCharacter(description)
+	return description
+}
+
+// -----------------------------
 // Records - store the data about each file
 // -----------------------------
 
@@ -112,14 +239,15 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 				fmt.Printf("using value for %q: %q\n", pathname, value)
 				writeRecords(records, pathname, value, d.IsDir())
 				return filepath.SkipDir
-			}
-			writeRecords(records, pathname, desc, d.IsDir())
-			if cfgNoListing[pathname] {
-				fmt.Printf("nolisting: %q\n", pathname)
-				return filepath.SkipDir
+			} else {
+				writeRecords(records, pathname, desc, d.IsDir())
+				if cfgNoListing[pathname] {
+					fmt.Printf("nolisting: %q\n", pathname)
+					return filepath.SkipDir
+				}
 			}
 		} else {
-			desc := "a file"
+			desc := getFileDescription(path)
 			writeRecords(records, pathname, desc, d.IsDir())
 		}
 		return nil
@@ -185,8 +313,19 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 		w.WriteString(layout.filename)
 		w.WriteString("](")
 		w.WriteString(layout.completePath)
-		w.WriteString("): ")
-		w.WriteString(layout.description)
+		w.WriteString("):")
+		if len(layout.description)+indent+len(layout.filename)+len(layout.completePath)+8 < 80 {
+			w.WriteString(" ")
+			w.WriteString(layout.description)
+		} else {
+			w.WriteString("\n")
+			// TODO: make description readable in non-preview mode
+			// lineLength := 80 - indent
+			// descriptionLines := make([]string, 0)
+			w.WriteString(indentStr)
+			w.WriteString("  ")
+			w.WriteString(layout.description)
+		}
 		w.WriteString("\n")
 	}
 
