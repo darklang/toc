@@ -28,7 +28,7 @@ You can automatically update this with a git hook: [toc-pre-commit.sh](toc-pre-c
 ## Customize your `TOC.md` file
 
 Add a `.toc.yaml` file to your repo, this will then be used to configure `toc`'s
-output. Here is an example from the [Dark repo](https://github.com/dark/darklang):
+output. Here is an example from the [Dark repo](https://github.com/darklang/dark):
 
 ```
 # You can add descriptions directly, useful for when you can't edit a file or directory
