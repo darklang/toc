@@ -215,11 +215,6 @@ func (c MultiLineComment) read(lines []string) string {
 
 var uncommentedLanguages = []string{"eot", "woff", "ttf"}
 
-type LanguageComment struct {
-	language string
-	syntaxes []Syntax
-}
-
 func s(prefix string) Syntax {
 	return SingleLineComment{prefix: prefix}
 }
