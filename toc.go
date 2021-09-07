@@ -362,53 +362,52 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 			}
 		}
 
-		// Check if there's a default comment for it
-		defaultDesc := ""
-		hasDefaultDesc := false
+		desc := ""
+
+		// Support builtin descriptions
+		for defaultSuffix, defaultValue := range builtinDescriptions {
+			if strings.HasSuffix(path, defaultSuffix) {
+				desc = defaultValue
+			}
+		}
+
+		// Use a default description if there's one in the config (overrides builtin)
 		for defaultSuffix, defaultValue := range cfg.DefaultDescriptions {
 			if strings.HasSuffix(path, defaultSuffix) {
-				defaultDesc = defaultValue
-				hasDefaultDesc = true
+				desc = defaultValue
 			}
 		}
 
-		// Check if it should have no comment
+		// Should we even read the file?
+		shouldReadFromFile := desc == ""
 		for _, extension := range uncommentedLanguages {
 			if strings.HasSuffix(path, "."+extension) {
-				writeRecords(records, pathname, "", d.IsDir())
-				return nil
+				shouldReadFromFile = false
 			}
 		}
 
+		// Use a description for this file, if there's one in the config, else read from
+		// the file (overrides builtin and default)
 		cfgDesc, hasCfgDescription := cfg.Descriptions[pathname]
-		// Save description
-		desc := ""
-		if d.IsDir() {
-			if hasCfgDescription {
-				desc = cfgDesc
-			} else {
+		if hasCfgDescription {
+			desc = cfgDesc
+		} else if shouldReadFromFile {
+			if d.IsDir() {
 				// If we can't find a README, ignore
 				desc, _ = getFileDescription(path + "/" + "README.md")
-			}
-			writeRecords(records, pathname, desc, d.IsDir())
-			if cfgNoListing[pathname] {
-				return filepath.SkipDir
 			} else {
-				return nil
+				desc, _ = getFileDescription(path)
 			}
-		} else {
-			if hasCfgDescription {
-				desc = cfgDesc
-			} else if hasDefaultDesc {
-				// Use the default comment for this file type, if present
-				desc = defaultDesc
-			} else {
-				desc, err = getFileDescription(path)
-				check("Opening file", err)
-			}
-			writeRecords(records, pathname, desc, d.IsDir())
-			return nil
 		}
+
+		// Save description
+		writeRecords(records, pathname, desc, d.IsDir())
+
+		// Recurse
+		if d.IsDir() && cfgNoListing[pathname] {
+			return filepath.SkipDir
+		}
+		return nil
 	})
 	check("Walking the directory tree", err)
 	return records
@@ -618,7 +617,7 @@ func readConfig(dir string) Config {
 func main() {
 
 	showMissing := false
-	dir := "."
+	dir := "./"
 	buildCommand := flaggy.NewSubcommand("build")
 	buildCommand.Description = "Build the table of contents"
 	checkCommand := flaggy.NewSubcommand("check")
