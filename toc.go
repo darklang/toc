@@ -333,6 +333,15 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 			}
 		}
 
+		// Check if there's a default comment for it
+		// find in list if it has the same suffix
+		defaultDesc := (*string)(nil)
+		for defaultSuffix, defaultValue := range cfg.DefaultComments {
+			if strings.HasSuffix(path, defaultSuffix) {
+				defaultDesc = &defaultValue
+			}
+		}
+
 		// Save description
 		if d.IsDir() {
 			desc := "a dir"
@@ -349,7 +358,12 @@ func collectRecords(dir string, cfg *Config, ignores *GitIgnores) Records {
 				}
 			}
 		} else {
-			desc := getFileDescription(path)
+			var desc string
+			if defaultDesc != nil {
+				desc = *defaultDesc
+			} else {
+				desc = getFileDescription(path)
+			}
 			writeRecords(records, pathname, desc, d.IsDir())
 		}
 		return nil
@@ -468,8 +482,9 @@ type Directories struct {
 }
 
 type Config struct {
-	Directories Directories
-	Ignore      []string
+	Directories     Directories
+	Ignore          []string
+	DefaultComments map[string]string
 }
 
 func readConfig() Config {
