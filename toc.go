@@ -289,6 +289,8 @@ var commentTable = map[string]([]Syntax){
 	"py":     []Syntax{hash, m("\"\"\"", "\"\"\"")},
 	"r":      perlStyle,
 	"rb":     []Syntax{hash, m("=begin", "=end")},
+	"res":    cStyle,                                   // rescript
+	"resi":   cStyle,                                   // rescript
 	"rkt":    []Syntax{s(";"), m("#|", "|#"), s("#;")}, // racket
 	"rss":    xmlStyle,
 	"rs":     append(cStyle, m("/*!", "*/"), s(`//!`)),
