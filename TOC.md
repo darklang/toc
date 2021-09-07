@@ -1,3 +1,7 @@
+- [Changelog.md](Changelog.md): toc changelog
+- [binaries](binaries):
+  release binaries are output here from ./build-release.sh
+- [build-release.sh](build-release.sh): build toc for release on all platforms
 - [go.mod](go.mod): Go dependency management
 - [go.sum](go.sum): Lockfile for go.mod
 - [toc-pre-commit.sh](toc-pre-commit.sh): Git hook to create TOC.md on commit

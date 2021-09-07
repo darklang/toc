@@ -1,0 +1,5 @@
+noDirectoryContents:
+  - binaries
+
+descriptions:
+  binaries: release binaries are output here from ./build-release.sh
