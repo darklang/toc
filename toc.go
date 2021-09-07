@@ -378,7 +378,7 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 		w.WriteString("](")
 		w.WriteString(layout.completePath)
 		w.WriteString("):")
-		if len(layout.description)+indent+len(layout.filename)+len(layout.completePath)+8 < 80 {
+		if layout.description == "" || len(layout.description)+indent+len(layout.filename)+len(layout.completePath)+8 < 80 {
 			w.WriteString(" ")
 			w.WriteString(layout.description)
 		} else {
@@ -394,10 +394,17 @@ func printLayout(w *bufio.Writer, indent int, layout Layout) {
 	}
 
 	children := make([]string, 0)
+	dotChildren := make([]string, 0)
 	for child := range layout.children {
-		children = append(children, child)
+		if strings.HasPrefix(child, ".") {
+			dotChildren = append(dotChildren, child)
+		} else {
+			children = append(children, child)
+		}
 	}
 	sort.Strings(children)
+	sort.Strings(dotChildren)
+	children = append(children, dotChildren...)
 	for _, child := range children {
 		printLayout(w, indent+2, layout.children[child])
 	}
