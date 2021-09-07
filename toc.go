@@ -1,5 +1,7 @@
 package main
 
+// Entire toc program
+
 import (
 	"bufio"
 	"fmt"
@@ -315,6 +317,8 @@ func getFileDescription(path string) (string, error) {
 			break
 		}
 	}
+
+	// Escape before returning so errant characters don't break the markdown syntax
 	return escape.MarkdownCharacters(description), nil
 }
 
