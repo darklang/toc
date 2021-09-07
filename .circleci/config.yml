@@ -18,13 +18,15 @@ jobs:
           paths:
             - "/go/pkg/mod"
       - run:
+          name: Build
+          command: go build .
+      - run:
           name: Run tests
           command: |
             mkdir -p /tmp/test-reports
             gotestsum --junitfile /tmp/test-reports/unit-tests.xml
       - run:
           name: Verify TOC.md
-          command: |
-            ./toc check
+          command: ./toc check
       - store_test_results:
           path: /tmp/test-reports
