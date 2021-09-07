@@ -19,6 +19,25 @@ import (
 )
 
 // -----------------------------
+// Builtin configuration data
+// TODO: adding more here is always helpful
+// -----------------------------
+var builtinIgnores = []string{".git", ".gitkeep", ".gitignore", ".gitattributes", ".dockerignore", "node_modules", "README.md", "TOC.md"}
+
+var uncommentedLanguages = []string{"eot", "woff", "ttf", "jpeg", "gif", "jpg", "pdf", "png"}
+
+var builtinDescriptions = map[string]string{
+	".circleci/config.yml": "CircleCI configuration",
+	"dune":                 "Dune build",
+	".fsproj":              "F# project",
+	".csproj":              "F# project",
+	"package.json":         "npm configuration",
+	"go.mod":               "Go dependency management",
+	"go.sum":               "Lockfile for go.mod",
+	".toc.yaml":            "[toc](https://github.com/darklang/toc) configuration",
+}
+
+// -----------------------------
 // Misc
 // -----------------------------
 
@@ -55,7 +74,7 @@ func (gi *GitIgnores) addList(paths []string) {
 }
 
 func (gi *GitIgnores) addBuiltin(root string) {
-	gi.addList([]string{".git", ".gitkeep", ".gitattributes", ".dockerignore", "node_modules", "README.md"})
+	gi.addList(builtinIgnores)
 	rootIgnoreFile := root + "/.gitignore"
 	if fileExists(rootIgnoreFile) {
 		gi.addFile(rootIgnoreFile)
@@ -158,8 +177,6 @@ func (c MultiLineComment) read(lines []string) string {
 // -----------------------------
 // Language definitions
 // -----------------------------
-
-var uncommentedLanguages = []string{"eot", "woff", "ttf"}
 
 func s(prefix string) Syntax {
 	return SingleLineComment{prefix: prefix}
